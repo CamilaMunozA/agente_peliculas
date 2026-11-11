@@ -7,11 +7,15 @@
 # Cuando Render arranca el proyecto, ejecuta este archivo.
 # ─────────────────────────────────────────────────────────────────────
 
+import logging
+import os
 import uuid
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from agente import chatear, obtener_historial
+
+log = logging.getLogger("agente_peliculas")
 
 
 # ── La aplicación ─────────────────────────────────────────────────────
@@ -27,11 +31,13 @@ app = FastAPI(
 # ── CORS ──────────────────────────────────────────────────────────────
 # CORS es un mecanismo de seguridad de los navegadores.
 # Sin esto, el sitio web no podría llamar la API desde otro dominio.
-# allow_origins=["*"] permite llamadas desde cualquier dominio.
-# En producción reemplaza ["*"] con el dominio exacto de tu sitio web.
+# En Render define ALLOWED_ORIGINS con el dominio de tu sitio, por ejemplo:
+#   ALLOWED_ORIGINS=https://misitio.com,https://www.misitio.com
+# Si no se define, se permite cualquier dominio ("*").
+ORIGENES = [o.strip() for o in os.environ.get("ALLOWED_ORIGINS", "*").split(",") if o.strip()]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=ORIGENES,
     allow_methods=["*"],
     allow_headers=["*"]
 )
@@ -104,10 +110,23 @@ def consultar(consulta: Consulta):
     session_id = consulta.session_id or str(uuid.uuid4())
 
     # Llamamos al agente
-    resultado = chatear(
-        session_id=session_id,
-        mensaje=consulta.mensaje
-    )
+    try:
+        resultado = chatear(
+            session_id=session_id,
+            mensaje=consulta.mensaje
+        )
+    except KeyError as e:
+        # Falta una variable de entorno (REDIS_URL)
+        log.exception("Configuración incompleta")
+        raise HTTPException(status_code=503, detail=f"Servicio mal configurado: falta la variable {e}.")
+    except Exception as e:
+        # Errores de Groq (clave inválida, modelo retirado, límite de uso) o de Redis.
+        # Se registra el detalle en los logs de Render y se responde 503 en vez de un 500 opaco.
+        log.exception("Error al consultar el agente")
+        raise HTTPException(
+            status_code=503,
+            detail=f"El agente no está disponible en este momento ({type(e).__name__}). Intenta de nuevo más tarde.",
+        )
 
     return Respuesta(
         session_id=          session_id,
@@ -125,5 +144,9 @@ def limpiar(session_id: str):
     Ejemplo de llamada:
     DELETE https://tu-api.onrender.com/limpiar/abc-123
     """
-    obtener_historial(session_id).clear()
+    try:
+        obtener_historial(session_id).clear()
+    except Exception as e:
+        log.exception("Error al limpiar el historial")
+        raise HTTPException(status_code=503, detail=f"No se pudo acceder a la memoria ({type(e).__name__}).")
     return {"mensaje": f"Historial '{session_id}' eliminado"}

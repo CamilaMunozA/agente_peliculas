@@ -1,10 +1,10 @@
-
 # Lista de librerías que Render debe instalar para correr la API.
 # Render lee este archivo automáticamente al desplegar el proyecto.
-langchain
-langchain-groq
-langchain-community
-fastapi
-uvicorn
-redis
-pydantic
+# Versiones fijas, probadas juntas (Python 3.12, oct 2026).
+langchain-core==1.6.10
+langchain-groq==1.1.3
+langchain-community==0.4.2
+fastapi==0.143.2
+uvicorn==0.54.0
+redis==8.1.0
+pydantic==2.14.1
