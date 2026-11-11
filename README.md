@@ -53,7 +53,7 @@ Cada conversación es completamente independiente.
 
 | Componente | Tecnología |
 |---|---|
-| Modelo LLM | `llama-3.3-70b-versatile` vía Groq |
+| Modelo LLM | `openai/gpt-oss-120b` vía Groq (configurable con `GROQ_MODEL`) |
 | Framework IA | LangChain (`langchain`, `langchain-groq`, `langchain-community`) |
 | Memoria persistente | Redis Cloud (`RedisChatMessageHistory`) |
 | API web | FastAPI + Uvicorn |
@@ -90,7 +90,7 @@ agente_peliculas/
 
 Contiene toda la lógica de IA, independiente del framework de API:
 
-- Instancia el modelo Groq una sola vez al arrancar el servidor.
+- `obtener_modelo()` crea el cliente Groq una sola vez, la primera vez que se necesita.
 - Define el `ChatPromptTemplate` con `MessagesPlaceholder` para insertar el historial.
 - `obtener_historial(session_id)` conecta con Redis y retorna el historial del usuario.
 - `chatear(session_id, mensaje)` ejecuta el ciclo completo y retorna respuesta + métricas.
@@ -109,12 +109,18 @@ Servidor FastAPI con tres endpoints:
 
 ## Configuración
 
-### Secretos requeridos
+### Variables de entorno
 
-| Variable | Valor | Dónde obtenerlo |
-|---|---|---|
-| `GROQ_API_KEY` | `gsk_...` | [console.groq.com](https://console.groq.com) |
-| `REDIS_URL` | `redis://default:password@host:port` | Redis Cloud → tu base de datos |
+| Variable | ¿Requerida? | Valor | Dónde obtenerlo |
+|---|---|---|---|
+| `GROQ_API_KEY` | Sí | `gsk_...` | [console.groq.com/keys](https://console.groq.com/keys) (gratis) |
+| `REDIS_URL` | Sí | `redis://default:password@host:port` | Redis Cloud → tu base de datos |
+| `GROQ_MODEL` | No | `openai/gpt-oss-120b` (por defecto) | [Modelos de Groq](https://console.groq.com/docs/models) |
+| `ALLOWED_ORIGINS` | No | `https://misitio.com,https://www.misitio.com` (por defecto `*`) | El dominio de tu sitio web |
+
+> `openai/gpt-oss-120b` es un modelo abierto de OpenAI **servido por Groq**: se usa con la API key de Groq, no con una de OpenAI.
+
+> **Cambiar de modelo:** Groq retira modelos con frecuencia ([lista de retiros](https://console.groq.com/docs/deprecations)). `llama-3.3-70b-versatile` se retiró del plan gratuito el 16/08/2026. Como el modelo se define con `GROQ_MODEL`, basta con cambiar la variable en Render, sin tocar el código.
 
 ### En Google Colab
 
@@ -132,13 +138,15 @@ Configura las mismas variables en **Environment Variables** del servicio.
 ## Instalación
 
 ```bash
-pip install langchain langchain-groq langchain-community redis fastapi uvicorn gradio
+pip install -r requirements.txt
 ```
+
+(Para la demo en Colab agrega `gradio`.)
 
 O en Google Colab:
 
 ```bash
-!pip install langchain langchain-groq langchain-community redis fastapi uvicorn gradio -q
+!pip install langchain-core langchain-groq langchain-community redis fastapi uvicorn gradio -q
 ```
 
 ---
@@ -147,9 +155,10 @@ O en Google Colab:
 
 | Parámetro | Valor | Justificación |
 |---|---|---|
-| `model` | `llama-3.3-70b-versatile` | Modelo de 70B parámetros vía Groq |
+| `model` | `openai/gpt-oss-120b` | Modelo abierto de 120B parámetros vía Groq (variable `GROQ_MODEL`) |
 | `temperature` | `0.7` | Respuestas variadas y naturales |
-| `max_tokens` | `512` | Respuestas cortas — es un chat de películas |
+| `max_tokens` | `1024` | Incluye los tokens de razonamiento de gpt-oss; la respuesta visible sigue siendo corta (máx. 3 líneas) |
+| `reasoning_effort` | `low` | Respuestas rápidas — no hace falta razonar mucho para recomendar películas |
 | `max_retries` | `2` | Reintento automático ante fallos de red |
 | `timeout` | `30` | Tiempo máximo de espera en segundos |
 | `VENTANA` | `10 mensajes` | Últimos 5 turnos completos enviados al modelo |
@@ -170,9 +179,10 @@ git push -u origin main
 ```
 
 2. En Render: crear un **Web Service** apuntando al repositorio.
-3. Configurar las variables de entorno `GROQ_API_KEY` y `REDIS_URL`.
-4. Render detecta `requirements.txt` e instala las dependencias automáticamente.
-5. La API queda disponible en `https://tu-servicio.onrender.com`.
+3. Configurar las variables de entorno `GROQ_API_KEY` y `REDIS_URL` (y opcionalmente `GROQ_MODEL` y `ALLOWED_ORIGINS`).
+4. **Build Command:** `pip install -r requirements.txt` · **Start Command:** `uvicorn main:app --host 0.0.0.0 --port $PORT`
+5. **Versión de Python:** 3.12, fijada en el archivo `.python-version`.
+6. La API queda disponible en `https://tu-servicio.onrender.com`.
 
 ---
 
@@ -202,6 +212,13 @@ git push -u origin main
 ### `DELETE /limpiar/{session_id}`
 
 Borra el historial del usuario en Redis. El agente responderá como si fuera la primera vez.
+
+### Errores
+
+| Código | Cuándo |
+|---|---|
+| **422** | Falta el campo `mensaje` o el formato del JSON es inválido. |
+| **503** | El LLM (Groq) o la memoria (Redis) no están disponibles: clave inválida, modelo retirado, límite de uso o variable de entorno faltante. El detalle queda en los logs de Render. |
 
 ---
 
@@ -242,7 +259,7 @@ N6: RAG
 N7: RAG + Agent + Memory
 ```
 
-LLM base: `gpt-4o-mini` (OpenAI) o `llama-3.3-70b-versatile` (Groq) · Entorno: Google Colab
+LLM base: `openai/gpt-oss-120b` (Groq) · Entorno: Google Colab
 
 ---
 

@@ -16,14 +16,33 @@ from langchain_community.chat_message_histories import RedisChatMessageHistory
 
 
 # ── El modelo ─────────────────────────────────────────────────────────
-# Lo instanciamos una sola vez al arrancar el servidor.
-# Si lo creáramos dentro de la función chatear(), se reconectaría
-# con Groq en cada mensaje — más lento y más costoso.
-modelo = ChatGroq(
-    model="llama-3.3-70b-versatile",
-    temperature=0.7,   # 0.7 = respuestas naturales y variadas
-    max_tokens=512     # respuestas cortas — es un chat de películas
-)
+# GROQ_API_KEY se lee automáticamente de las variables de entorno (Render).
+# El modelo se puede cambiar con la variable GROQ_MODEL sin tocar el código
+# (Groq retira modelos con frecuencia: https://console.groq.com/docs/deprecations).
+# llama-3.3-70b-versatile se retiró del plan gratuito el 16/08/2026;
+# Groq recomienda openai/gpt-oss-120b como reemplazo.
+#
+# El cliente se crea una sola vez, la primera vez que se necesita (no al
+# importar): así, si falta GROQ_API_KEY, el servidor arranca igual y el
+# error se reporta de forma clara en /consultar.
+_modelo = None
+
+
+def obtener_modelo() -> ChatGroq:
+    global _modelo
+    if _modelo is None:
+        _modelo = ChatGroq(
+            model=os.environ.get("GROQ_MODEL", "openai/gpt-oss-120b"),
+            temperature=0.7,   # 0.7 = respuestas naturales y variadas
+            # gpt-oss es un modelo de razonamiento: los tokens de razonamiento
+            # cuentan dentro de max_tokens, por eso el margen es mayor (antes 512).
+            # La respuesta sigue siendo corta porque el prompt pide máximo 3 líneas.
+            max_tokens=1024,
+            reasoning_effort="low",   # respuestas rápidas; no hace falta razonar mucho
+            max_retries=2,            # reintento automático ante fallos de red
+            timeout=30,               # segundos máximos de espera
+        )
+    return _modelo
 
 
 # ── El template ───────────────────────────────────────────────────────
@@ -103,7 +122,7 @@ def chatear(session_id: str, mensaje: str) -> dict:
     # template  → arma el prompt con el historial y el mensaje actual
     # modelo    → genera la respuesta
     # StrOutputParser → convierte la respuesta a texto plano
-    chain     = template | modelo | StrOutputParser()
+    chain     = template | obtener_modelo() | StrOutputParser()
     respuesta = chain.invoke({
         "historial": mensajes_recientes,
         "mensaje":   mensaje
