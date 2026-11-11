@@ -1,5 +1,6 @@
 # 🎬 Agente con Memoria Redis — Recomendador de Películas
 https://pelibot.netlify.app/
+
 **Ruta LangChain · Nivel 4: Memory**  
 Proveedor LLM: Groq | Memoria persistente: Redis Cloud | Framework API: FastAPI
 
